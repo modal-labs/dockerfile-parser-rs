@@ -58,6 +58,7 @@ pub(crate) fn clean_escaped_breaks(s: &str) -> String {
 pub enum ShellOrExecExpr {
   Shell(BreakableString),
   Exec(StringArray),
+  Heredoc(Heredoc),
 }
 
 impl ShellOrExecExpr {
@@ -274,5 +275,43 @@ pub(crate) fn parse_any_breakable(pair: Pair) -> Result<BreakableString> {
   Ok(BreakableString {
     span: (&pair).into(),
     components: parse_any_breakable_inner(pair)?,
+  })
+}
+
+/// A heredoc expression
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
+
+pub struct Heredoc {
+  pub span: Span,
+  // pub operator: String,
+  // pub delimiter: String,
+  pub commands: Vec<String>,
+}
+
+// impl 
+
+pub(crate) fn parse_heredoc(record: Pair) -> Result<Heredoc> {
+  let span = Span::from_pair(&record);
+  // let mut operator = None;
+  // let mut delimiter = None;
+  let mut commands = Vec::new();
+
+  for field in record.into_inner() {
+    match field.as_rule() {
+      Rule::heredoc_body => {
+        let content = field.as_str().to_string();
+        commands = content.lines().map(String::from).collect();
+      }
+      _ => return {
+        Err(unexpected_token(field))
+      }
+    }
+  }
+
+  Ok(Heredoc {
+    span,
+    // operator: operator.ok_or_else(|| Error::GenericParseError { message: "heredoc operator is required".into() })?,
+    // delimiter: delimiter.ok_or_else(|| Error::GenericParseError { message: "heredoc delimiter is required".into() })?,
+    commands,
   })
 }

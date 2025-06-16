@@ -70,6 +70,7 @@ impl CopyInstruction {
         Rule::copy_flag => flags.push(CopyFlag::from_record(field)?),
         Rule::copy_pathspec => paths.push(parse_string(&field)?),
         Rule::comment => continue,
+        // Rule::heredoc => 
         _ => return Err(unexpected_token(field))
       }
     }

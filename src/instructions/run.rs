@@ -34,7 +34,11 @@ impl RunInstruction {
         span,
         expr: ShellOrExecExpr::Shell(parse_any_breakable(field)?),
       }),
-      _ => Err(unexpected_token(field)),
+      Rule::run_heredoc => Ok(RunInstruction {
+        span,
+        expr: ShellOrExecExpr::Heredoc(parse_heredoc(field)?)
+      }),
+      _ => Err(unexpected_token(field))
     }
   }
 
@@ -273,6 +277,27 @@ mod tests {
             content: "hello world".to_string(),
           }],
         })
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        echo "hello world"
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 33),
+        expr: ShellOrExecExpr::Heredoc(Heredoc {
+          span: Span::new(4, 33),
+          // operator: "<<".to_string(),
+          // delimiter: "EOF".to_string(),
+          commands: vec!["echo \"hello world\"".to_string()],
+        }),
       }.into()
     );
 
