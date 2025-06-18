@@ -283,17 +283,11 @@ pub(crate) fn parse_any_breakable(pair: Pair) -> Result<BreakableString> {
 
 pub struct Heredoc {
   pub span: Span,
-  // pub operator: String,
-  // pub delimiter: String,
   pub commands: Vec<String>,
 }
 
-// impl 
-
 pub(crate) fn parse_heredoc(record: Pair) -> Result<Heredoc> {
   let span = Span::from_pair(&record);
-  // let mut operator = None;
-  // let mut delimiter = None;
   let mut commands = Vec::new();
 
   for field in record.into_inner() {
@@ -310,8 +304,6 @@ pub(crate) fn parse_heredoc(record: Pair) -> Result<Heredoc> {
 
   Ok(Heredoc {
     span,
-    // operator: operator.ok_or_else(|| Error::GenericParseError { message: "heredoc operator is required".into() })?,
-    // delimiter: delimiter.ok_or_else(|| Error::GenericParseError { message: "heredoc delimiter is required".into() })?,
     commands,
   })
 }
