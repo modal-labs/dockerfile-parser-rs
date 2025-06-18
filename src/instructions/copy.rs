@@ -353,4 +353,74 @@ mod tests {
 
     Ok(())
   }
+
+  #[test]
+  fn copy_multi_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF <<EOF2 /usr/share/nginx/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          EOF2
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 318 },
+        flags: vec![],
+        sources: vec![SourceType::FileContent(SpannedString {
+          span: Span::new(51, 180),
+          content: indoc!(r#"
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          "#).to_string(),
+        }), 
+        SourceType::FileContent(SpannedString {
+          span: Span::new(184, 313),
+          content: indoc!(r#"
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(18, 50),
+          content: "/usr/share/nginx/html/index.html".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
 }
