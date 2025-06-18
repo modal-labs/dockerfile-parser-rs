@@ -30,14 +30,37 @@ impl RunInstruction {
         span,
         expr: ShellOrExecExpr::Exec(parse_string_array(field)?),
       }),
-      Rule::run_shell => Ok(RunInstruction {
-        span,
-        expr: ShellOrExecExpr::Shell(parse_any_breakable(field)?),
-      }),
-      Rule::run_heredoc => Ok(RunInstruction {
-        span,
-        expr: ShellOrExecExpr::Heredoc(parse_heredoc(field)?)
-      }),
+      Rule::run_shell => {
+        let mut field_iter = field.into_inner();
+        let first_field = field_iter.next().unwrap();
+        
+        match first_field.as_rule() {
+          Rule::run_heredoc => {
+            let heredoc = parse_heredoc(first_field)?;
+            Ok(RunInstruction {
+              span,
+              expr: ShellOrExecExpr::ShellWithHeredoc(BreakableString::new((4, 4)), heredoc),
+            })
+          },
+          Rule::any_breakable => {
+            let breakable = parse_any_breakable(first_field)?;
+            
+            if let Some(heredoc_field) = field_iter.next() {
+              let heredoc = parse_heredoc(heredoc_field)?;
+              Ok(RunInstruction {
+                span,
+                expr: ShellOrExecExpr::ShellWithHeredoc(breakable, heredoc),
+              })
+            } else {
+              Ok(RunInstruction {
+                span,
+                expr: ShellOrExecExpr::Shell(breakable),
+              })
+            }
+          },
+          _ => Err(unexpected_token(first_field))
+        }
+      },
       _ => Err(unexpected_token(field))
     }
   }
@@ -292,12 +315,38 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 33),
-        expr: ShellOrExecExpr::Heredoc(Heredoc {
-          span: Span::new(4, 33),
-          // operator: "<<".to_string(),
-          // delimiter: "EOF".to_string(),
-          commands: vec!["echo \"hello world\"".to_string()],
-        }),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 33),
+            content: "<<EOF\necho \"hello world\"\nEOF\n".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_shell_with_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN python3 <<EOF
+      with open("/hello", "w") as f:
+          print("Hello", file=f)
+          print("World", file=f)
+      EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 107),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 12))
+          .add_string((4, 12), "python3 "),
+          Heredoc {
+            span: Span::new(12, 107),
+            content: "<<EOF\nwith open(\"/hello\", \"w\") as f:\n    print(\"Hello\", file=f)\n    print(\"World\", file=f)\nEOF\n".to_string(),
+          }
+        ),
       }.into()
     );
 
