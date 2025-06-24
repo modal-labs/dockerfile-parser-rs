@@ -103,8 +103,8 @@ string_array = _{
 }
 
 heredoc_op = _{ "<<" }
-heredoc_delim = _{ (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/")+ }
-heredoc_terminator = _{ heredoc_delim ~ NEWLINE }
+heredoc_delim = { (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/")+ }
+heredoc_terminator = { heredoc_delim ~ NEWLINE }
 heredoc_body = @{ (!heredoc_terminator ~ ANY)* }
 
 from_flag_name = @{ ASCII_ALPHA+ }

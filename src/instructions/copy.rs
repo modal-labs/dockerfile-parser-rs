@@ -1,6 +1,5 @@
 // (C) Copyright 2019-2020 Hewlett Packard Enterprise Development LP
 
-use std::collections::VecDeque;
 use std::convert::TryFrom;
 
 use snafu::ensure;
@@ -53,7 +52,7 @@ impl CopyFlag {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SourceType {
   FileName(SpannedString),
-  FileContent(SpannedString),
+  FileContents(SpannedString),
 }
 
 /// A Dockerfile [`COPY` instruction][copy].
@@ -71,56 +70,74 @@ impl CopyInstruction {
   pub(crate) fn from_record(record: Pair) -> Result<CopyInstruction> {
     let span = Span::from_pair(&record);
     let mut flags = Vec::new();
-    let mut paths = VecDeque::new();
-    let mut is_heredoc = false;
+    let mut destination = SpannedString { span: Span::new(0, 0), content: String::new() };
 
-    for field in record.into_inner() {
-      match field.as_rule() {
-        Rule::copy_standard => {
-          for inner in field.into_inner() {
-            match inner.as_rule() {
-              Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
-              Rule::copy_pathspec => paths.push_back(parse_string(&inner)?),
-              Rule::comment => continue,
-              _ => return Err(unexpected_token(inner))
-            }
+    let mut inner = record.into_inner();
+    let field = inner.next().ok_or_else(|| Error::GenericParseError {
+      message: "Copy instruction expected a field".into(),
+    })?;
+    
+    match field.as_rule() {
+      Rule::copy_standard => {
+        let mut paths = Vec::new();
+        for inner in field.into_inner() {
+          match inner.as_rule() {
+            Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
+            Rule::copy_pathspec => paths.push(parse_string(&inner)?),
+            Rule::comment => continue,
+            _ => return Err(unexpected_token(inner))
           }
-        },
-        Rule::copy_heredoc => {
-          is_heredoc = true;
-          for inner in field.into_inner() {
-            match inner.as_rule() {
-              Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
-              Rule::copy_pathspec => paths.push_back(parse_string(&inner)?),
-              Rule::heredoc_body => paths.push_back(parse_string(&inner)?),
-              _ => return Err(unexpected_token(inner))
-            }
+        }
+        ensure!(
+          paths.len() >= 2,
+          GenericParseError {
+            message: "copy requires at least one source and a destination"
           }
-        },
-        _ => return Err(unexpected_token(field))
-      }
+        );
+        destination = paths.pop().unwrap();
+        Ok(CopyInstruction {
+          span,
+          flags,
+          sources: paths.into_iter().map(SourceType::FileName).collect(),
+          destination
+        })
+      },
+      Rule::copy_heredoc => {
+        let mut sources = Vec::new();
+        let mut delimiters = Vec::new();
+        let mut terminators = Vec::new();
+        for inner in field.into_inner() {
+          match inner.as_rule() {
+            Rule::heredoc_delim => delimiters.push(parse_string(&inner)?),
+            Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
+            Rule::copy_pathspec => destination = (parse_string(&inner)?),
+            Rule::heredoc_body => sources.push(parse_string(&inner)?),
+            Rule::heredoc_terminator => terminators.push(parse_string(&inner)?),
+            _ => return Err(unexpected_token(inner))
+          }
+        }
+        ensure!(
+          delimiters.len() == terminators.len() && 
+          delimiters.iter().zip(terminators.iter()).all(|(d, t)| (d.content.clone() + "\n") == t.content),
+          GenericParseError {
+            message: "Invalid heredoc in copy instruction"
+          }
+        );
+        ensure!(
+          sources.len() >= 1,
+          GenericParseError {
+            message: "copy requires at least one source and a destination"
+          }
+        );
+        Ok(CopyInstruction {
+          span,
+          flags,
+          sources: sources.into_iter().map(SourceType::FileContents).collect(),
+          destination
+        })
+      },
+      _ => return Err(unexpected_token(field))
     }
-
-    ensure!(
-      paths.len() >= 2,
-      GenericParseError {
-        message: "copy requires at least one source and a destination"
-      }
-    );
-
-    // naughty unwrap, but we know there's something to pop
-    let destination = if is_heredoc { paths.pop_front().unwrap() } else { paths.pop_back().unwrap() };
-
-    Ok(CopyInstruction {
-      span,
-      flags,
-      sources: paths.into_iter().map(|s| if is_heredoc { 
-          SourceType::FileContent(s) 
-      } else { 
-          SourceType::FileName(s) 
-      }).collect(),
-      destination
-    })
   }
 }
 
@@ -330,7 +347,7 @@ mod tests {
       CopyInstruction {
         span: Span { start: 0, end: 177 },
         flags: vec![],
-        sources: vec![SourceType::FileContent(SpannedString {
+        sources: vec![SourceType::FileContents(SpannedString {
           span: Span::new(44, 173),
           content: indoc!(r#"
           <!DOCTYPE html>
@@ -350,6 +367,28 @@ mod tests {
         },
       }.into()
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_incorrect() -> Result<()> {
+    assert!(parse_single(
+      indoc!(r#"
+        COPY <<EOF /usr/share/nginx/html/index.html
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Welcome to nginx!</title>
+        </head>
+        <body>
+            <h1>Welcome to nginx!</h1>
+        </body>
+        </html>
+        WRONGTERMINATOR
+      "#),
+      Rule::copy
+    ).is_err());
 
     Ok(())
   }
@@ -386,7 +425,7 @@ mod tests {
       CopyInstruction {
         span: Span { start: 0, end: 318 },
         flags: vec![],
-        sources: vec![SourceType::FileContent(SpannedString {
+        sources: vec![SourceType::FileContents(SpannedString {
           span: Span::new(51, 180),
           content: indoc!(r#"
           <!DOCTYPE html>
@@ -400,7 +439,7 @@ mod tests {
           </html>
           "#).to_string(),
         }), 
-        SourceType::FileContent(SpannedString {
+        SourceType::FileContents(SpannedString {
           span: Span::new(184, 313),
           content: indoc!(r#"
           <!DOCTYPE html>
