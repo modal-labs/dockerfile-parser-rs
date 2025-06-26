@@ -110,7 +110,7 @@ impl CopyInstruction {
           match inner.as_rule() {
             Rule::heredoc_delim => delimiters.push(parse_string(&inner)?),
             Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
-            Rule::copy_pathspec => destination = (parse_string(&inner)?),
+            Rule::copy_pathspec => destination = parse_string(&inner)?,
             Rule::heredoc_body => sources.push(parse_string(&inner)?),
             Rule::heredoc_terminator => terminators.push(parse_string(&inner)?),
             _ => return Err(unexpected_token(inner))

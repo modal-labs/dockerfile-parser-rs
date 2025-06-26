@@ -352,4 +352,17 @@ mod tests {
 
     Ok(())
   }
+
+  #[test]
+  fn run_shell_no_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(r#"run echo "<<EOF EOF""#, Rule::run)?
+        .as_run().unwrap()
+        .as_shell().unwrap(),
+      &BreakableString::new((4, 20))
+        .add_string((4, 20), "echo \"<<EOF EOF\"")
+    );
+
+    Ok(())
+  }
 }

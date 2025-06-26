@@ -64,7 +64,7 @@ any_content = @{
   (
     !NEWLINE ~
     !line_continuation ~
-    !heredoc_op ~
+    !run_heredoc ~
     ANY
   )+
 }
@@ -75,7 +75,7 @@ any_breakable = ${
   ) | (
     // ... OR some piece of content, requiring a continuation EXCEPT on the
     // final line
-    !run_heredoc ~ any_content ~ (line_continuation ~ any_breakable)?
+    any_content ~ (line_continuation ~ any_breakable)?
   )
 }
 
