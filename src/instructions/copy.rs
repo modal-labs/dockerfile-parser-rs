@@ -48,6 +48,13 @@ impl CopyFlag {
   }
 }
 
+/// A source that is either a filename or the file contents (heredocs)
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum SourceType {
+  FileName(SpannedString),
+  FileContents(SpannedString),
+}
+
 /// A Dockerfile [`COPY` instruction][copy].
 ///
 /// [copy]: https://docs.docker.com/engine/reference/builder/#copy
@@ -55,7 +62,7 @@ impl CopyFlag {
 pub struct CopyInstruction {
   pub span: Span,
   pub flags: Vec<CopyFlag>,
-  pub sources: Vec<SpannedString>,
+  pub sources: Vec<SourceType>,
   pub destination: SpannedString
 }
 
@@ -63,33 +70,74 @@ impl CopyInstruction {
   pub(crate) fn from_record(record: Pair) -> Result<CopyInstruction> {
     let span = Span::from_pair(&record);
     let mut flags = Vec::new();
-    let mut paths = Vec::new();
+    let mut destination = SpannedString { span: Span::new(0, 0), content: String::new() };
 
-    for field in record.into_inner() {
-      match field.as_rule() {
-        Rule::copy_flag => flags.push(CopyFlag::from_record(field)?),
-        Rule::copy_pathspec => paths.push(parse_string(&field)?),
-        Rule::comment => continue,
-        _ => return Err(unexpected_token(field))
-      }
+    let mut inner = record.into_inner();
+    let field = inner.next().ok_or_else(|| Error::GenericParseError {
+      message: "Copy instruction expected a field".into(),
+    })?;
+    
+    match field.as_rule() {
+      Rule::copy_standard => {
+        let mut paths = Vec::new();
+        for inner in field.into_inner() {
+          match inner.as_rule() {
+            Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
+            Rule::copy_pathspec => paths.push(parse_string(&inner)?),
+            Rule::comment => continue,
+            _ => return Err(unexpected_token(inner))
+          }
+        }
+        ensure!(
+          paths.len() >= 2,
+          GenericParseError {
+            message: "copy requires at least one source and a destination"
+          }
+        );
+        destination = paths.pop().unwrap();
+        Ok(CopyInstruction {
+          span,
+          flags,
+          sources: paths.into_iter().map(SourceType::FileName).collect(),
+          destination
+        })
+      },
+      Rule::copy_heredoc => {
+        let mut sources = Vec::new();
+        let mut delimiters = Vec::new();
+        let mut terminators = Vec::new();
+        for inner in field.into_inner() {
+          match inner.as_rule() {
+            Rule::heredoc_delim => delimiters.push(parse_string(&inner)?),
+            Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
+            Rule::copy_pathspec => destination = parse_string(&inner)?,
+            Rule::heredoc_body => sources.push(parse_string(&inner)?),
+            Rule::heredoc_terminator => terminators.push(parse_string(&inner)?),
+            _ => return Err(unexpected_token(inner))
+          }
+        }
+        ensure!(
+          delimiters.len() == terminators.len() && 
+          delimiters.iter().zip(terminators.iter()).all(|(d, t)| (d.content.clone() + "\n") == t.content),
+          GenericParseError {
+            message: "Invalid heredoc in copy instruction"
+          }
+        );
+        ensure!(
+          sources.len() >= 1,
+          GenericParseError {
+            message: "copy requires at least one source and a destination"
+          }
+        );
+        Ok(CopyInstruction {
+          span,
+          flags,
+          sources: sources.into_iter().map(SourceType::FileContents).collect(),
+          destination
+        })
+      },
+      _ => return Err(unexpected_token(field))
     }
-
-    ensure!(
-      paths.len() >= 2,
-      GenericParseError {
-        message: "copy requires at least one source and a destination"
-      }
-    );
-
-    // naughty unwrap, but we know there's something to pop
-    let destination = paths.pop().unwrap();
-
-    Ok(CopyInstruction {
-      span,
-      flags,
-      sources: paths,
-      destination
-    })
   }
 }
 
@@ -123,10 +171,10 @@ mod tests {
       CopyInstruction {
         span: Span { start: 0, end: 12 },
         flags: vec![],
-        sources: vec![SpannedString {
+        sources: vec![SourceType::FileName(SpannedString {
           span: Span::new(5, 8),
           content: "foo".to_string()
-        }],
+        })],
         destination: SpannedString {
           span: Span::new(9, 12),
           content: "bar".to_string()
@@ -144,16 +192,20 @@ mod tests {
       CopyInstruction {
         span: Span { start: 0, end: 20 },
         flags: vec![],
-        sources: vec![SpannedString {
-          span: Span::new(5, 8),
-          content: "foo".to_string(),
-        }, SpannedString {
-          span: Span::new(9, 12),
-          content: "bar".to_string()
-        }, SpannedString {
-          span: Span::new(13, 16),
-          content: "baz".to_string()
-        }],
+        sources: vec![
+          SourceType::FileName(SpannedString {
+            span: Span::new(5, 8),
+            content: "foo".to_string(),
+          }),
+          SourceType::FileName(SpannedString {
+            span: Span::new(9, 12),
+            content: "bar".to_string()
+          }),
+          SourceType::FileName(SpannedString {
+            span: Span::new(13, 16),
+            content: "baz".to_string()
+          })
+        ],
         destination: SpannedString {
           span: Span::new(17, 20),
           content: "qux".to_string()
@@ -172,10 +224,10 @@ mod tests {
       CopyInstruction {
         span: Span { start: 0, end: 14 },
         flags: vec![],
-        sources: vec![SpannedString {
+        sources: vec![SourceType::FileName(SpannedString {
           span: Span::new(5, 8),
           content: "foo".to_string(),
-        }],
+        })],
         destination: SpannedString {
           span: Span::new(11, 14),
           content: "bar".to_string(),
@@ -214,10 +266,10 @@ mod tests {
             }
           }
         ],
-        sources: vec![SpannedString {
+        sources: vec![SourceType::FileName(SpannedString {
           span: Span::new(24, 46),
           content: "/usr/lib/libssl.so.1.1".to_string(),
-        }],
+        })],
         destination: SpannedString {
           span: Span::new(47, 52),
           content: "/tmp/".into(),
@@ -259,13 +311,151 @@ mod tests {
             },
           }
         ],
-        sources: vec![SpannedString {
+        sources: vec![SourceType::FileName(SpannedString {
           span: Span::new(44, 66),
           content: "/usr/lib/libssl.so.1.1".to_string(),
-        }],
+        })],
         destination: SpannedString {
           span: Span::new(81, 86),
           content: "/tmp/".into(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF /usr/share/nginx/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 177 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(44, 173),
+          content: indoc!(r#"
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(11, 43),
+          content: "/usr/share/nginx/html/index.html".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_incorrect() -> Result<()> {
+    assert!(parse_single(
+      indoc!(r#"
+        COPY <<EOF /usr/share/nginx/html/index.html
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Welcome to nginx!</title>
+        </head>
+        <body>
+            <h1>Welcome to nginx!</h1>
+        </body>
+        </html>
+        WRONGTERMINATOR
+      "#),
+      Rule::copy
+    ).is_err());
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_multi_heredoc() -> Result<()> {
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF <<EOF2 /usr/share/nginx/html/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          EOF2
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 318 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(51, 180),
+          content: indoc!(r#"
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          "#).to_string(),
+        }), 
+        SourceType::FileContents(SpannedString {
+          span: Span::new(184, 313),
+          content: indoc!(r#"
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Welcome to nginx!</title>
+          </head>
+          <body>
+              <h1>Welcome to nginx!</h1>
+          </body>
+          </html>
+          "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(18, 50),
+          content: "/usr/share/nginx/html/index.html".to_string(),
         },
       }.into()
     );
