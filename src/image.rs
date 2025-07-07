@@ -127,12 +127,11 @@ impl ImageRef {
       // parts length is guaranteed to be at least 1 given an empty string
       let (image, hash) = image_full.split_at(at_pos);
 
-      let (image, tag) = if let Some(colon_pos) = image.find(':') {
-        let (image_no_tag, tag) = image.split_at(colon_pos);
-        (image_no_tag, Some(tag[1..].to_string()))
-      } else {
-        (image, None)
-      };
+      // extract the tag if present
+      let (image, tag) = image
+        .split_once(':')
+        .map(|(img, t)| (img, Some(t.to_string())))
+        .unwrap_or((image, None));
 
       ImageRef {
         registry,
@@ -286,6 +285,28 @@ mod tests {
         image: "fake_project/fake_image".into(),
         tag: None,
         hash: Some("sha256:".into())
+      }
+    );
+
+    // invalid tag when hash is given, but should still not panic
+    assert_eq!(
+      ImageRef::parse("fake_project/fake_image:@fake_hash"),
+      ImageRef {
+        registry: None,
+        image: "fake_project/fake_image".into(),
+        tag: Some("".to_string()),
+        hash: Some("fake_hash".to_string()),
+      }
+    );
+
+    // valid tag and hash
+    assert_eq!(
+      ImageRef::parse("fake_project/fake_image:fake_tag@fake_hash"),
+      ImageRef {
+        registry: None,
+        image: "fake_project/fake_image".into(),
+        tag: Some("fake_tag".to_string()),
+        hash: Some("fake_hash".to_string()),
       }
     );
   }
