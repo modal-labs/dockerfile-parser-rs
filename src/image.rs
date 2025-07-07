@@ -127,11 +127,18 @@ impl ImageRef {
       // parts length is guaranteed to be at least 1 given an empty string
       let (image, hash) = image_full.split_at(at_pos);
 
+      let (image, tag) = if let Some(colon_pos) = image.find(':') {
+        let (image_no_tag, tag) = image.split_at(colon_pos);
+        (image_no_tag, Some(tag[1..].to_string()))
+      } else {
+        (image, None)
+      };
+
       ImageRef {
         registry,
         image: image.to_string(),
         hash: Some(hash[1..].to_string()),
-        tag: None
+        tag,
       }
     } else {
       // parts length is guaranteed to be at least 1 given an empty string
