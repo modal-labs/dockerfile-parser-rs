@@ -370,6 +370,34 @@ mod tests {
 
     Ok(())
   }
+  
+  #[test]
+  fn copy_heredoc_simple() -> Result<()> {
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF /tmp/test.txt
+          hello world
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 41 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(25, 37),
+          content: "hello world\n".to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(11, 24),
+          content: "/tmp/test.txt".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
 
   #[test]
   fn copy_heredoc_incorrect() -> Result<()> {

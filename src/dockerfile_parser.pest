@@ -105,7 +105,8 @@ string_array = _{
 heredoc_op = _{ "<<" }
 heredoc_delim = { (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/")+ }
 heredoc_terminator = { heredoc_delim ~ NEWLINE }
-heredoc_body = @{ (!heredoc_terminator ~ ANY)* }
+heredoc_line = @{ !(heredoc_delim ~ NEWLINE) ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+heredoc_body = @{ heredoc_line* }
 
 from_flag_name = @{ ASCII_ALPHA+ }
 from_flag_value = @{ any_whitespace }
