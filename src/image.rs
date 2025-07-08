@@ -99,10 +99,16 @@ impl ImageRef {
   /// This is not fallible, however malformed image strings may return
   /// unexpected results.
   pub fn parse(s: &str) -> ImageRef {
-    // tags may be one of:
+
+    // Refs are of the form [HOST[:PORT]/]NAMESPACE/REPOSITORY[:TAG][@DIGEST]
+
+    // Examples of tags:
     // foo (implies registry.hub.docker.com/library/foo:latest)
     // foo:bar (implies registry.hub.docker.com/library/foo:bar)
     // org/foo:bar (implies registry.hub.docker.com/org/foo:bar)
+
+    // It's possible for a ref to include both a tag and a digest, in which case the tag must be parsed out. 
+    // e.g. nvidia/cuda:latest@sha256:2d913b09e6be8387e1a10976933642c73c840c0b735f0bf3c28d97fc9bc422e0
 
     // per https://stackoverflow.com/a/42116190, some extra rules are needed to
     // disambiguate external registries
@@ -127,7 +133,7 @@ impl ImageRef {
       // parts length is guaranteed to be at least 1 given an empty string
       let (image, hash) = image_full.split_at(at_pos);
 
-      // extract the tag if present
+      // Parse the tag in the case of a tag and digest hash
       let (image, tag) = image
         .split_once(':')
         .map(|(img, t)| (img, Some(t.to_string())))
