@@ -55,6 +55,14 @@ pub enum SourceType {
   FileContents(SpannedString),
 }
 
+impl AsRef<str> for SourceType {
+  fn as_ref(&self) -> &str {
+    match self {
+      SourceType::FileName(s) | SourceType::FileContents(s) => s.as_ref()
+    }
+  }
+}
+
 /// A Dockerfile [`COPY` instruction][copy].
 ///
 /// [copy]: https://docs.docker.com/engine/reference/builder/#copy
