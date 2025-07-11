@@ -1,6 +1,7 @@
 // (C) Copyright 2019-2020 Hewlett Packard Enterprise Development LP
 
 use std::convert::TryFrom;
+use std::collections::VecDeque;
 
 use snafu::ensure;
 
@@ -104,23 +105,35 @@ impl CopyInstruction {
       },
       Rule::copy_heredoc => {
         let mut sources = Vec::new();
-        let mut delimiters = Vec::new();
+        let mut delimiters = VecDeque::new();
         let mut terminators = Vec::new();
         for inner in field.into_inner() {
           match inner.as_rule() {
-            Rule::heredoc_delim => delimiters.push(parse_string(&inner)?),
+            Rule::heredoc_delim => delimiters.push_back(parse_string(&inner)?),
             Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
             Rule::copy_pathspec => destination = parse_string(&inner)?,
             Rule::heredoc_body => sources.push(parse_string(&inner)?),
-            Rule::heredoc_terminator => terminators.push(parse_string(&inner)?),
+            Rule::heredoc_terminator => {
+              let terminator = parse_string(&inner)?;
+              let expected_delimiter = delimiters.pop_front().ok_or_else(|| Error::GenericParseError {
+                message: "Unexpected heredoc terminator without matching delimiter".into()
+              })?;
+              
+              ensure!(
+                (expected_delimiter.content.clone() + "\n") == terminator.content,
+                GenericParseError {
+                  message: "Invalid heredoc in copy instruction"
+                }
+              );
+              terminators.push(terminator);
+            },
             _ => return Err(unexpected_token(inner))
           }
         }
         ensure!(
-          delimiters.len() == terminators.len() && 
-          delimiters.iter().zip(terminators.iter()).all(|(d, t)| (d.content.clone() + "\n") == t.content),
+          delimiters.is_empty(),
           GenericParseError {
-            message: "Invalid heredoc in copy instruction"
+            message: "Unmatched heredoc delimiters in copy instruction"
           }
         );
         ensure!(
@@ -377,17 +390,17 @@ mod tests {
       parse_single(
         indoc!(r#"
           COPY <<EOF /tmp/test.txt
-          hello world
+          hello
           EOF
         "#),
         Rule::copy
       )?.into_copy().unwrap(),
       CopyInstruction {
-        span: Span { start: 0, end: 41 },
+        span: Span { start: 0, end: 35 },
         flags: vec![],
         sources: vec![SourceType::FileContents(SpannedString {
-          span: Span::new(25, 37),
-          content: "hello world\n".to_string(),
+          span: Span::new(25, 31),
+          content: "hello\n".to_string(),
         })],
         destination: SpannedString {
           span: Span::new(11, 24),

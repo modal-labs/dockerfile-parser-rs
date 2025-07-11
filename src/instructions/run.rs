@@ -329,6 +329,28 @@ mod tests {
   }
 
   #[test]
+  fn run_heredoc_simple() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        echo
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 19),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 19),
+            content: "<<EOF\necho\nEOF\n".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
   fn run_shell_with_heredoc() -> Result<()> {
     assert_eq!(
       parse_single(indoc!(r#"RUN python3 <<EOF
@@ -341,7 +363,7 @@ mod tests {
         span: Span::new(0, 107),
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 12))
-          .add_string((4, 12), "python3 "),
+            .add_string((4, 12), "python3 "),
           Heredoc {
             span: Span::new(12, 107),
             content: "<<EOF\nwith open(\"/hello\", \"w\") as f:\n    print(\"Hello\", file=f)\n    print(\"World\", file=f)\nEOF\n".to_string(),
