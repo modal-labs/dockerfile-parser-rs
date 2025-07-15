@@ -641,4 +641,46 @@ mod tests {
 
     Ok(())
   }
+
+  #[test]
+  fn copy_heredoc_consecutive() -> Result<()> {
+    // Test two consecutive COPY heredoc instructions with different delimiters
+    use crate::Dockerfile;
+    
+    let dockerfile_content = indoc!(r#"
+      FROM alpine
+      COPY <<EOF1 /tmp/first.txt
+      first content
+      EOF1
+      COPY <<EOF2 /tmp/second.txt
+      second content
+      EOF2
+    "#);
+    
+    let dockerfile = Dockerfile::parse(dockerfile_content)?;
+    
+    // Check first COPY instruction
+    let first_copy = dockerfile.instructions[1].clone().into_copy().unwrap();
+    assert_eq!(first_copy.sources.len(), 1);
+    match &first_copy.sources[0] {
+      SourceType::FileContents(content) => {
+        assert_eq!(content.content, "first content\n");
+      }
+      _ => panic!("Expected FileContents for first COPY"),
+    }
+    assert_eq!(first_copy.destination.content, "/tmp/first.txt");
+    
+    // Check second COPY instruction
+    let second_copy = dockerfile.instructions[2].clone().into_copy().unwrap();
+    assert_eq!(second_copy.sources.len(), 1);
+    match &second_copy.sources[0] {
+      SourceType::FileContents(content) => {
+        assert_eq!(content.content, "second content\n");
+      }
+      _ => panic!("Expected FileContents for second COPY"),
+    }
+    assert_eq!(second_copy.destination.content, "/tmp/second.txt");
+    
+    Ok(())
+  }
 }
