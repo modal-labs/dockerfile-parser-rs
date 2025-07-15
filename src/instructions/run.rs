@@ -480,4 +480,27 @@ mod tests {
 
     Ok(())
   }
+
+  #[test]
+  fn run_heredoc_with_destination() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN tee <<EOF /file
+      hello world
+      EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 35),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "tee "),
+          Heredoc {
+            span: Span::new(8, 35),
+            content: "<<EOF /file\nhello world\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
 }
