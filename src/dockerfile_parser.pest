@@ -106,7 +106,7 @@ heredoc_op = _{ "<<" }
 heredoc_delim_str = _{ (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/")+ }
 
 heredoc_delim = _{ PUSH(heredoc_delim_str) }
-heredoc_terminator = _{ PEEK[0..1] }
+heredoc_terminator = _{ POP }
 heredoc_line = @{ !(heredoc_terminator) ~ any_eol ~ NEWLINE }
 heredoc_body = @{ heredoc_line* }
 
