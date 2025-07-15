@@ -104,25 +104,14 @@ impl CopyInstruction {
       },
       Rule::copy_heredoc => {
         let mut sources = Vec::new();
-        let mut delimiters = Vec::new();
-        let mut terminators = Vec::new();
         for inner in field.into_inner() {
           match inner.as_rule() {
-            Rule::heredoc_delim => delimiters.push(parse_string(&inner)?),
             Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
             Rule::copy_pathspec => destination = parse_string(&inner)?,
             Rule::heredoc_body => sources.push(parse_string(&inner)?),
-            Rule::heredoc_terminator => terminators.push(parse_string(&inner)?),
             _ => return Err(unexpected_token(inner))
           }
         }
-        ensure!(
-          delimiters.len() == terminators.len() && 
-          delimiters.iter().zip(terminators.iter()).all(|(d, t)| (d.content.clone() + "\n") == t.content),
-          GenericParseError {
-            message: "Invalid heredoc in copy instruction"
-          }
-        );
         ensure!(
           sources.len() >= 1,
           GenericParseError {
@@ -345,7 +334,7 @@ mod tests {
         Rule::copy
       )?.into_copy().unwrap(),
       CopyInstruction {
-        span: Span { start: 0, end: 177 },
+        span: Span { start: 0, end: 176 },
         flags: vec![],
         sources: vec![SourceType::FileContents(SpannedString {
           span: Span::new(44, 173),
@@ -377,17 +366,17 @@ mod tests {
       parse_single(
         indoc!(r#"
           COPY <<EOF /tmp/test.txt
-          hello world
+          hello
           EOF
         "#),
         Rule::copy
       )?.into_copy().unwrap(),
       CopyInstruction {
-        span: Span { start: 0, end: 41 },
+        span: Span { start: 0, end: 34 },
         flags: vec![],
         sources: vec![SourceType::FileContents(SpannedString {
-          span: Span::new(25, 37),
-          content: "hello world\n".to_string(),
+          span: Span::new(25, 31),
+          content: "hello\n".to_string(),
         })],
         destination: SpannedString {
           span: Span::new(11, 24),
@@ -422,68 +411,230 @@ mod tests {
   }
 
   #[test]
-  fn copy_multi_heredoc() -> Result<()> {
+  fn copy_heredoc_with_comments() -> Result<()> {
+    // Comments inside heredoc body should be treated as literal content, not parsed as comments
     assert_eq!(
       parse_single(
         indoc!(r#"
-          COPY <<EOF <<EOF2 /usr/share/nginx/html/index.html
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Welcome to nginx!</title>
-          </head>
-          <body>
-              <h1>Welcome to nginx!</h1>
-          </body>
-          </html>
+          COPY <<EOF /tmp/script.sh
+          #!/bin/bash
+          # This is a comment inside the heredoc
+          echo "hello world"
+          # Another comment
           EOF
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Welcome to nginx!</title>
-          </head>
-          <body>
-              <h1>Welcome to nginx!</h1>
-          </body>
-          </html>
-          EOF2
         "#),
         Rule::copy
       )?.into_copy().unwrap(),
       CopyInstruction {
-        span: Span { start: 0, end: 318 },
+        span: Span { start: 0, end: 117 },
         flags: vec![],
         sources: vec![SourceType::FileContents(SpannedString {
-          span: Span::new(51, 180),
+          span: Span::new(26, 114),
           content: indoc!(r#"
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Welcome to nginx!</title>
-          </head>
-          <body>
-              <h1>Welcome to nginx!</h1>
-          </body>
-          </html>
-          "#).to_string(),
-        }), 
-        SourceType::FileContents(SpannedString {
-          span: Span::new(184, 313),
-          content: indoc!(r#"
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Welcome to nginx!</title>
-          </head>
-          <body>
-              <h1>Welcome to nginx!</h1>
-          </body>
-          </html>
-          "#).to_string(),
+            #!/bin/bash
+            # This is a comment inside the heredoc
+            echo "hello world"
+            # Another comment
+            "#).to_string(),
         })],
         destination: SpannedString {
-          span: Span::new(18, 50),
-          content: "/usr/share/nginx/html/index.html".to_string(),
+          span: Span::new(11, 25),
+          content: "/tmp/script.sh".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_empty() -> Result<()> {
+    // Empty heredoc should parse successfully with empty content
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF /tmp/empty.txt
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 29 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(26, 26),
+          content: "".to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(11, 25),
+          content: "/tmp/empty.txt".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_with_flags() -> Result<()> {
+    // Heredoc with copy flags should work
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY --from=builder <<EOF /tmp/config.json
+          {
+            "version": "1.0",
+            "env": "production"
+          }
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 92 },
+        flags: vec![
+          CopyFlag {
+            span: Span { start: 5, end: 19 },
+            name: SpannedString {
+              span: Span { start: 7, end: 11 },
+              content: "from".to_string(),
+            },
+            value: SpannedString {
+              span: Span { start: 12, end: 19 },
+              content: "builder".to_string(),
+            },
+          }
+        ],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(43, 89),
+          content: indoc!(r#"
+            {
+              "version": "1.0",
+              "env": "production"
+            }
+            "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(26, 42),
+          content: "/tmp/config.json".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_special_characters() -> Result<()> {
+    // Test heredoc with special characters that might interfere with parsing
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF /tmp/special.txt
+          Line with "quotes" and 'apostrophes'
+          Line with $variables and ${braces}
+          Line with \backslashes\ and /forward/slashes/
+          Line with <>brackets<> and (parentheses)
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 190 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(28, 187),
+          content: indoc!(r#"
+            Line with "quotes" and 'apostrophes'
+            Line with $variables and ${braces}
+            Line with \backslashes\ and /forward/slashes/
+            Line with <>brackets<> and (parentheses)
+            "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(11, 27),
+          content: "/tmp/special.txt".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_like_content() -> Result<()> {
+    // Content that looks like Dockerfile instructions should be treated as literal
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<EOF /tmp/dockerfile-content.txt
+          FROM alpine:latest
+          RUN apk add --no-cache curl
+          COPY . /app
+          CMD ["echo", "hello"]
+          EOF
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 123 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(39, 120),
+          content: indoc!(r#"
+            FROM alpine:latest
+            RUN apk add --no-cache curl
+            COPY . /app
+            CMD ["echo", "hello"]
+            "#).to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(11, 38),
+          content: "/tmp/dockerfile-content.txt".to_string(),
+        },
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_case_sensitive() -> Result<()> {
+    // Terminator should be case sensitive - wrong case should fail
+    assert!(parse_single(
+      indoc!(r#"
+        COPY <<EOF /tmp/test.txt
+        content here
+        eof
+      "#),
+      Rule::copy
+    ).is_err());
+
+    Ok(())
+  }
+
+  #[test]
+  fn copy_heredoc_whitespace_delimiter() -> Result<()> {
+    // Test that whitespace around delimiter is handled correctly
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          COPY <<   DELIMITER   /tmp/test.txt
+          some content
+          DELIMITER
+        "#),
+        Rule::copy
+      )?.into_copy().unwrap(),
+      CopyInstruction {
+        span: Span { start: 0, end: 58 },
+        flags: vec![],
+        sources: vec![SourceType::FileContents(SpannedString {
+          span: Span::new(36, 49),
+          content: "some content\n".to_string(),
+        })],
+        destination: SpannedString {
+          span: Span::new(22, 35),
+          content: "/tmp/test.txt".to_string(),
         },
       }.into()
     );

@@ -314,12 +314,34 @@ mod tests {
         EOF
       "#), Rule::run)?,
       RunInstruction {
-        span: Span::new(0, 33),
+        span: Span::new(0, 32),
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
-            span: Span::new(4, 33),
-            content: "<<EOF\necho \"hello world\"\nEOF\n".to_string(),
+            span: Span::new(4, 32),
+            content: "<<EOF\necho \"hello world\"\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_simple() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        echo
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 18),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 18),
+            content: "<<EOF\necho\nEOF".to_string(),
           }
         ),
       }.into()
@@ -338,13 +360,13 @@ mod tests {
       EOF
       "#), Rule::run)?,
       RunInstruction {
-        span: Span::new(0, 107),
+        span: Span::new(0, 106),
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 12))
-          .add_string((4, 12), "python3 "),
+            .add_string((4, 12), "python3 "),
           Heredoc {
-            span: Span::new(12, 107),
-            content: "<<EOF\nwith open(\"/hello\", \"w\") as f:\n    print(\"Hello\", file=f)\n    print(\"World\", file=f)\nEOF\n".to_string(),
+            span: Span::new(12, 106),
+            content: "<<EOF\nwith open(\"/hello\", \"w\") as f:\n    print(\"Hello\", file=f)\n    print(\"World\", file=f)\nEOF".to_string(),
           }
         ),
       }.into()
@@ -361,6 +383,122 @@ mod tests {
         .as_shell().unwrap(),
       &BreakableString::new((4, 20))
         .add_string((4, 20), "echo \"<<EOF EOF\"")
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_empty() -> Result<()> {
+    // Empty heredoc should parse successfully
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 13),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 13),
+            content: "<<EOF\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_with_comments() -> Result<()> {
+    // Comments inside heredoc should be treated as literal content
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        # This is a comment
+        echo "hello"
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 46),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 46),
+            content: "<<EOF\n# This is a comment\necho \"hello\"\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_special_characters() -> Result<()> {
+    // Special characters should be preserved literally
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<EOF
+        echo "quotes" && echo 'apostrophes'
+        echo $VAR ${BRACE} \backslash
+        EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 79),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 79),
+            content: "<<EOF\necho \"quotes\" && echo 'apostrophes'\necho $VAR ${BRACE} \\backslash\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_whitespace_delimiter() -> Result<()> {
+    // Whitespace around delimiter should be handled
+    assert_eq!(
+      parse_single(indoc!(r#"RUN <<   DELIM   
+        content
+        DELIM
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 31),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 4)),
+          Heredoc {
+            span: Span::new(4, 31),
+            content: "<<   DELIM   \ncontent\nDELIM".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_with_destination() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN tee <<EOF /file
+      hello world
+      EOF
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 35),
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "tee "),
+          Heredoc {
+            span: Span::new(8, 35),
+            content: "<<EOF /file\nhello world\nEOF".to_string(),
+          }
+        ),
+      }.into()
     );
 
     Ok(())
