@@ -18,41 +18,41 @@ use crate::parse_string;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RunInstruction {
   pub span: Span,
-  pub flags: Vec<RunFlag>,
+  pub options: Vec<RunOption>,
   pub expr: ShellOrExecExpr,
 }
 
 /// A key/value pair passed to a `RUN` instruction as a flag.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct RunFlag {
+pub struct RunOption {
   pub span: Span,
   pub name: SpannedString,
   pub value: SpannedString,
 }
 
-impl RunFlag {
-  fn from_record(record: Pair) -> Result<RunFlag> {
+impl RunOption {
+  fn from_record(record: Pair) -> Result<RunOption> {
     let span = Span::from_pair(&record);
     let mut name = None;
     let mut value = None;
 
     for field in record.into_inner() {
       match field.as_rule() {
-        Rule::run_flag_name => name = Some(parse_string(&field)?),
-        Rule::run_flag_value => value = Some(parse_string(&field)?),
+        Rule::run_option_name => name = Some(parse_string(&field)?),
+        Rule::run_option_value => value = Some(parse_string(&field)?),
         _ => return Err(unexpected_token(field))
       }
     }
 
     let name = name.ok_or_else(|| Error::GenericParseError {
-      message: "run flags require a key".into(),
+      message: "run options require a key".into(),
     })?;
 
     let value = value.ok_or_else(|| Error::GenericParseError {
-      message: "run flags require a value".into()
+      message: "run options require a value".into()
     })?;
 
-    Ok(RunFlag { span, name, value })
+    Ok(RunOption { span, name, value })
   }
 }
 
@@ -60,12 +60,12 @@ impl RunInstruction {
   pub(crate) fn from_record(record: Pair) -> Result<RunInstruction> {
     let span = Span::from_pair(&record);
 
-    // Collect any RUN flags and capture the expression pair (exec or shell)
-    let mut flags: Vec<RunFlag> = Vec::new();
+    // Collect any RUN options and capture the expression pair (exec or shell)
+    let mut options: Vec<RunOption> = Vec::new();
     let mut expr_pair: Option<Pair> = None;
     for field in record.into_inner() {
       match field.as_rule() {
-        Rule::run_flag => flags.push(RunFlag::from_record(field)?),
+        Rule::run_option => options.push(RunOption::from_record(field)?),
         Rule::run_exec | Rule::run_shell => {
           expr_pair = Some(field);
           break;
@@ -82,7 +82,7 @@ impl RunInstruction {
     match field.as_rule() {
       Rule::run_exec => Ok(RunInstruction {
         span,
-        flags,
+        options,
         expr: ShellOrExecExpr::Exec(parse_string_array(field)?),
       }),
       Rule::run_shell => {
@@ -96,7 +96,7 @@ impl RunInstruction {
             let heredoc = parse_heredoc(first_field)?;
             Ok(RunInstruction {
               span,
-              flags,
+              options,
               expr: ShellOrExecExpr::ShellWithHeredoc(BreakableString::new((4, 4)), heredoc),
             })
           },
@@ -107,13 +107,13 @@ impl RunInstruction {
               let heredoc = parse_heredoc(heredoc_field)?;
               Ok(RunInstruction {
                 span,
-                flags,
+                options,
                 expr: ShellOrExecExpr::ShellWithHeredoc(breakable, heredoc),
               })
             } else {
               Ok(RunInstruction {
                 span,
-                flags,
+                options,
                 expr: ShellOrExecExpr::Shell(breakable),
               })
             }
@@ -188,7 +188,7 @@ mod tests {
       parse_single(r#"run ["echo", "hello world"]"#, Rule::run)?,
       RunInstruction {
         span: Span::new(0, 27),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::Exec(StringArray {
           span: Span::new(4, 27),
           elements: vec![SpannedString {
@@ -206,7 +206,7 @@ mod tests {
   }
 
   #[test]
-  fn run_with_flags_shell() -> Result<()> {
+  fn run_with_mount_option_shell() -> Result<()> {
     assert_eq!(
       parse_single(r#"run --mount=type=cache,target=/root/.cache echo hello"#, Rule::run)?
         .as_run().unwrap()
@@ -218,12 +218,12 @@ mod tests {
   }
 
   #[test]
-  fn run_with_flags_exec() -> Result<()> {
+  fn run_with_network_option_exec() -> Result<()> {
     assert_eq!(
       parse_single(r#"run --network=host ["echo","hi"]"#, Rule::run)?,
       RunInstruction {
         span: Span::new(0, 32),
-        flags: vec![RunFlag {
+        options: vec![RunOption {
           span: Span::new(4, 18),
           name: SpannedString { span: Span::new(6, 13), content: "network".into() },
           value: SpannedString { span: Span::new(14, 18), content: "host".into() },
@@ -363,7 +363,7 @@ mod tests {
         ]"#, Rule::run)?,
       RunInstruction {
         span: Span::new(0, 66),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::Exec(StringArray {
           span: Span::new(13, 66),
           elements: vec![SpannedString {
@@ -390,7 +390,7 @@ mod tests {
         ]"#, Rule::run)?,
       RunInstruction {
         span: Span::new(0, 66),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::Exec(StringArray {
           span: Span::new(13, 66),
           elements: vec![SpannedString {
@@ -416,7 +416,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 32),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -439,7 +439,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 18),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -464,7 +464,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 106),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 12))
             .add_string((4, 12), "python3 "),
@@ -501,7 +501,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 13),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -526,7 +526,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 46),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -551,7 +551,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 79),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -575,7 +575,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 31),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 4)),
           Heredoc {
@@ -598,7 +598,7 @@ mod tests {
       "#), Rule::run)?,
       RunInstruction {
         span: Span::new(0, 35),
-        flags: vec![],
+        options: vec![],
         expr: ShellOrExecExpr::ShellWithHeredoc(
           BreakableString::new((4, 8))
             .add_string((4, 8), "tee "),

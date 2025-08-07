@@ -139,12 +139,13 @@ run_heredoc = { heredoc_op ~ arg_ws_maybe ~ heredoc_delim ~ any_eol ~ NEWLINE ~ 
 run_shell = { run_heredoc | (any_breakable ~ run_heredoc) | any_breakable }
 run_exec = { string_array }
 
-// RUN flags (BuildKit options): --device, --mount, --network, --security
-run_flag_name = @{ ASCII_ALPHA+ }
-run_flag_value = @{ any_whitespace }
-run_flag = { "--" ~ run_flag_name ~ "=" ~ run_flag_value }
+// RUN options (BuildKit options): --device, --mount, --network, --security
+// See: https://docs.docker.com/reference/dockerfile/#run
+run_option_name = @{ ASCII_ALPHA+ }
+run_option_value = @{ any_whitespace }
+run_option = { "--" ~ run_option_name ~ "=" ~ run_option_value }
 
-run = { ^"run" ~ (arg_ws ~ run_flag)* ~ arg_ws ~ (run_exec | run_shell) }
+run = { ^"run" ~ (arg_ws ~ run_option)* ~ arg_ws ~ (run_exec | run_shell) }
 
 entrypoint_shell = @{ any_breakable }
 entrypoint_exec = { string_array }
