@@ -426,6 +426,34 @@ mod tests {
       ]
     );
 
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          ENV \
+            # hello
+            foo \
+            # bar
+            Lorem ipsum dolor sit amet, \
+            # baz
+            consectetur adipiscing elit
+        "#),
+        Rule::env
+      )?.into_env().unwrap().vars,
+      vec![
+        EnvVar::new(
+          Span::new(18, 101),
+          SpannedString {
+            span: Span::new(18, 21),
+            content: "foo".to_string(),
+          },
+          BreakableString::new((34, 101))
+            .add_string((34, 62), "Lorem ipsum dolor sit amet, ")
+            .add_comment((66, 71), "# baz")
+            .add_string((72, 101), "  consectetur adipiscing elit")
+        )
+      ]
+    );
+
     Ok(())
   }
 }

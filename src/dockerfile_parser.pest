@@ -59,7 +59,7 @@ arg_ws_maybe = _{ (ws | line_continuation ~ (comment_line | empty_line)*)* }
 // continues consuming input beyond a newline, if the newline is preceeded by an
 // escape (\)
 // these tokens need to be preserved in the final tree so they can be handled
-// appropraitely; pest's ignore rules aren't sufficient for our needs
+// appropriately; pest's ignore rules aren't sufficient for our needs
 any_content = @{
   (
     !NEWLINE ~
@@ -72,6 +72,9 @@ any_breakable = ${
   (
     // can be any comment string (no line continuation required)
     comment_line ~ any_breakable?
+  ) | (
+    // allow a leading line continuation before any content or comments
+    line_continuation ~ any_breakable
   ) | (
     // ... OR some piece of content, requiring a continuation EXCEPT on the
     // final line
@@ -145,6 +148,7 @@ run_option_name = @{ ASCII_ALPHA+ }
 run_option_value = @{ any_whitespace }
 run_option = { "--" ~ run_option_name ~ "=" ~ run_option_value }
 
+// run = { ^"run" ~ ( (arg_ws ~ run_exec) | (ws+ ~ run_shell) ) }
 run = { ^"run" ~ (arg_ws ~ run_option)* ~ arg_ws ~ (run_exec | run_shell) }
 
 entrypoint_shell = @{ any_breakable }
