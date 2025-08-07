@@ -1,6 +1,7 @@
 // (C) Copyright 2019-2020 Hewlett Packard Enterprise Development LP
 
 use std::convert::TryFrom;
+use std::fmt;
 
 use crate::Span;
 use crate::dockerfile_parser::Instruction;
@@ -22,17 +23,19 @@ pub struct RunInstruction {
   pub expr: ShellOrExecExpr,
 }
 
-/// A key/value pair passed to a `RUN` instruction as a flag.
+/// A key-value OPTION passed to a `RUN` instruction.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RunOption {
   pub span: Span,
   pub name: SpannedString,
   pub value: SpannedString,
+  pub original: String,
 }
 
 impl RunOption {
   fn from_record(record: Pair) -> Result<RunOption> {
     let span = Span::from_pair(&record);
+    let original = record.as_str().to_string();
     let mut name = None;
     let mut value = None;
 
@@ -52,7 +55,13 @@ impl RunOption {
       message: "run options require a value".into()
     })?;
 
-    Ok(RunOption { span, name, value })
+    Ok(RunOption { span, name, value, original })
+  }
+}
+
+impl fmt::Display for RunOption {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.original)
   }
 }
 
@@ -227,6 +236,7 @@ mod tests {
           span: Span::new(4, 18),
           name: SpannedString { span: Span::new(6, 13), content: "network".into() },
           value: SpannedString { span: Span::new(14, 18), content: "host".into() },
+          original: "--network=host".into(),
         }],
         expr: ShellOrExecExpr::Exec(StringArray {
           span: Span::new(19, 32),
@@ -610,6 +620,16 @@ mod tests {
       }.into()
     );
 
+    Ok(())
+  }
+
+  #[test]
+  fn run_option_display() -> Result<()> {
+    let ins = parse_single(r#"run --security=insecure --mount=type=cache,target=/root echo hi"#, Rule::run)?
+      .into_run().unwrap();
+    assert_eq!(ins.options.len(), 2);
+    assert_eq!(ins.options[0].to_string(), "--security=insecure");
+    assert_eq!(ins.options[1].to_string(), "--mount=type=cache,target=/root");
     Ok(())
   }
 }
