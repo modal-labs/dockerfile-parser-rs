@@ -314,6 +314,26 @@ mod tests {
         .add_string((78, 85), "    baz")
     );
 
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
+          run \
+              # hey
+              foo && \
+              # implicitly escaped
+              bar
+        "#),
+        Rule::run
+      )?
+        .into_run().unwrap()
+        .into_shell().unwrap(),
+      BreakableString::new((4, 61))
+        .add_comment((10, 15), "# hey")
+        .add_string((16, 27), "    foo && ")
+        .add_comment((33, 53), "# implicitly escaped")
+        .add_string((54, 61), "    bar")
+    );
+
     Ok(())
   }
 
