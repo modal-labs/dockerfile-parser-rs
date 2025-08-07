@@ -138,7 +138,13 @@ label = { ^"label" ~ (label_single | (arg_ws ~ label_pair?)+) }
 run_heredoc = { heredoc_op ~ arg_ws_maybe ~ heredoc_delim ~ any_eol ~ NEWLINE ~ heredoc_body ~ heredoc_terminator }
 run_shell = { run_heredoc | (any_breakable ~ run_heredoc) | any_breakable }
 run_exec = { string_array }
-run = { ^"run" ~ arg_ws ~ (run_exec | run_shell) }
+
+// RUN flags (BuildKit options): --device, --mount, --network, --security
+run_flag_name = @{ ASCII_ALPHA+ }
+run_flag_value = @{ any_whitespace }
+run_flag = { "--" ~ run_flag_name ~ "=" ~ run_flag_value }
+
+run = { ^"run" ~ (arg_ws ~ run_flag)* ~ arg_ws ~ (run_exec | run_shell) }
 
 entrypoint_shell = @{ any_breakable }
 entrypoint_exec = { string_array }
