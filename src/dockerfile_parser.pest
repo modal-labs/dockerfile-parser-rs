@@ -193,7 +193,7 @@ env_name = ${ (ASCII_ALPHANUMERIC | "_")+ }
 // like any_whitespace but allows zero chars, so `ENV FOO=` parses as FOO -> ""
 env_pair_value = ${ whitespace* }
 env_pair_quoted_value = ${ string }
-env_pair = @{ env_name ~ "=" ~ (env_pair_quoted_value | env_pair_value) }
+env_pair = @{ env_name ~ "=" ~ (env_pair_quoted_value | env_pair_value)? }
 env_pairs = { (arg_ws ~ env_pair?)+ }
 env_single_quoted_value = ${ string }
 env_single_value = @{ any_breakable }
