@@ -751,90 +751,135 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn run_shell_heredoc_single_quoted() -> Result<()> {
-        let ins = parse_single(
-            indoc!(
-                r#"RUN cat > /test.conf << 'EOF'
-        server {
-            listen 80;
-        }
+  #[test]
+  fn run_heredoc_single_quoted() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN cat <<'EOF'
+        hello
         EOF
-      "#
-            ),
-            Rule::run,
-        )?
-        .into_run()
-        .unwrap();
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 25),
+        options: vec![],
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "cat "),
+          Heredoc {
+            span: Span::new(8, 25),
+            content: "<<'EOF'\nhello\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
 
-        let (cmd, heredoc) = ins.expr.into_shell_with_heredoc().unwrap();
-        assert_eq!(cmd.to_string(), "cat > /test.conf ");
-        assert!(heredoc.content.starts_with("<< 'EOF'"));
-        assert!(heredoc.content.contains("server {"));
-        assert!(heredoc.content.contains("listen 80;"));
-        assert!(heredoc.content.ends_with("EOF"));
+    Ok(())
+  }
 
-        Ok(())
-    }
-
-    #[test]
-    fn run_shell_heredoc_double_quoted() -> Result<()> {
-        let ins = parse_single(
-            indoc!(
-                r#"RUN cat > /file << "END"
-        hello world
-        END
-      "#
-            ),
-            Rule::run,
-        )?
-        .into_run()
-        .unwrap();
-
-        let (cmd, heredoc) = ins.expr.into_shell_with_heredoc().unwrap();
-        assert_eq!(cmd.to_string(), "cat > /file ");
-        assert!(heredoc.content.starts_with("<< \"END\""));
-        assert!(heredoc.content.ends_with("END"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn run_docker_heredoc_single_quoted() -> Result<()> {
-        let ins = parse_single(
-            indoc!(
-                r#"RUN <<'EOF'
-        echo hello
+  #[test]
+  fn run_heredoc_double_quoted() -> Result<()> {
+    assert_eq!(
+      parse_single(indoc!(r#"RUN cat <<"EOF"
+        hello
         EOF
-      "#
-            ),
-            Rule::run,
-        )?
-        .into_run()
-        .unwrap();
+      "#), Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 25),
+        options: vec![],
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "cat "),
+          Heredoc {
+            span: Span::new(8, 25),
+            content: "<<\"EOF\"\nhello\nEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
 
-        let (cmd, heredoc) = ins.expr.into_shell_with_heredoc().unwrap();
-        assert_eq!(cmd.to_string(), "");
-        assert!(heredoc.content.contains("echo hello"));
-        assert!(heredoc.content.ends_with("EOF"));
+    Ok(())
+  }
 
-        Ok(())
-    }
+  #[test]
+  fn run_heredoc_dash() -> Result<()> {
+    assert_eq!(
+      parse_single("RUN cat <<-EOF\n\thello\n\tEOF\n", Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 26),
+        options: vec![],
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "cat "),
+          Heredoc {
+            span: Span::new(8, 26),
+            content: "<<-EOF\n\thello\n\tEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
 
-    #[test]
-    fn run_option_display() -> Result<()> {
-        let ins = parse_single(
-            r#"run --security=insecure --mount=type=cache,target=/root echo hi"#,
-            Rule::run,
-        )?
-        .into_run()
-        .unwrap();
-        assert_eq!(ins.options.len(), 2);
-        assert_eq!(ins.options[0].to_string(), "--security=insecure");
-        assert_eq!(
-            ins.options[1].to_string(),
-            "--mount=type=cache,target=/root"
-        );
-        Ok(())
-    }
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_dash_quoted() -> Result<()> {
+    assert_eq!(
+      parse_single("RUN cat <<-'EOF'\n\thello\n\tEOF\n", Rule::run)?,
+      RunInstruction {
+        span: Span::new(0, 28),
+        options: vec![],
+        expr: ShellOrExecExpr::ShellWithHeredoc(
+          BreakableString::new((4, 8))
+            .add_string((4, 8), "cat "),
+          Heredoc {
+            span: Span::new(8, 28),
+            content: "<<-'EOF'\n\thello\n\tEOF".to_string(),
+          }
+        ),
+      }.into()
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_quoted_preserves_dollar_signs() -> Result<()> {
+    let ins = parse_single(indoc!(r#"RUN cat > /f <<'EOF'
+      echo $VAR ${BRACE}
+      EOF
+    "#), Rule::run)?.into_run().unwrap();
+
+    let (_, heredoc) = ins.expr.as_shell_with_heredoc().unwrap();
+    assert_eq!(heredoc.content, "<<'EOF'\necho $VAR ${BRACE}\nEOF");
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_heredoc_repro_from_bug_report() -> Result<()> {
+    let ins = parse_single(indoc!(r#"RUN cat > /test.conf << 'EOF'
+      server {
+          listen 80;
+      }
+      EOF
+    "#), Rule::run)?.into_run().unwrap();
+
+    let (breakable, heredoc) = ins.expr.as_shell_with_heredoc().unwrap();
+    assert_eq!(breakable.to_string(), "cat > /test.conf ");
+    assert_eq!(
+      heredoc.content,
+      "<< 'EOF'\nserver {\n    listen 80;\n}\nEOF"
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_option_display() -> Result<()> {
+    let ins = parse_single(r#"run --security=insecure --mount=type=cache,target=/root echo hi"#, Rule::run)?
+      .into_run().unwrap();
+    assert_eq!(ins.options.len(), 2);
+    assert_eq!(ins.options[0].to_string(), "--security=insecure");
+    assert_eq!(ins.options[1].to_string(), "--mount=type=cache,target=/root");
+    Ok(())
+  }
 }
