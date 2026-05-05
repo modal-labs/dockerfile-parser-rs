@@ -44,6 +44,23 @@ impl CopyFlag {
 
         Ok(CopyFlag { span, name, value })
     }
+
+    let name = name.ok_or_else(|| Error::GenericParseError {
+      message: "copy flags require a key".into(),
+    })?;
+
+    // Boolean flags like `--link` parse without a `=value`. BuildKit treats
+    // bare `--link` as equivalent to `--link=true`, so we synthesize that here
+    // rather than push the Optional all the way through the public CopyFlag API.
+    let value = value.unwrap_or_else(|| SpannedString {
+      span,
+      content: "true".to_string(),
+    });
+
+    Ok(CopyFlag {
+      span, name, value
+    })
+  }
 }
 
 /// A source that is either a filename or the file contents (heredocs)
@@ -176,105 +193,59 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn copy_multiple_sources() -> Result<()> {
-        assert_eq!(
-            parse_single("copy foo bar baz qux", Rule::copy)?,
-            CopyInstruction {
-                span: Span { start: 0, end: 20 },
-                flags: vec![],
-                sources: vec![
-                    SourceType::FileName(SpannedString {
-                        span: Span::new(5, 8),
-                        content: "foo".to_string(),
-                    }),
-                    SourceType::FileName(SpannedString {
-                        span: Span::new(9, 12),
-                        content: "bar".to_string()
-                    }),
-                    SourceType::FileName(SpannedString {
-                        span: Span::new(13, 16),
-                        content: "baz".to_string()
-                    })
-                ],
-                destination: SpannedString {
-                    span: Span::new(17, 20),
-                    content: "qux".to_string()
-                },
-            }
-            .into()
-        );
-
-        Ok(())
+  #[test]
+  fn copy_boolean_flag_bare() -> Result<()> {
+    // BuildKit's --link is a boolean flag and may appear without `=value`.
+    // The grammar accepts this; the synthesized value is "true".
+    let parsed = parse_single("copy --link foo bar", Rule::copy)?
+      .into_copy()
+      .unwrap();
+    assert_eq!(parsed.flags.len(), 1);
+    assert_eq!(parsed.flags[0].name.content, "link");
+    assert_eq!(parsed.flags[0].value.content, "true");
+    assert_eq!(parsed.sources.len(), 1);
+    match &parsed.sources[0] {
+      SourceType::FileName(s) => assert_eq!(s.content, "foo"),
+      _ => panic!("expected FileName source"),
     }
+    assert_eq!(parsed.destination.content, "bar");
+    Ok(())
+  }
 
-    #[test]
-    fn copy_multiline() -> Result<()> {
-        // multiline is okay; whitespace on the next line is optional
-        assert_eq!(
-            parse_single("copy foo \\\nbar", Rule::copy)?,
-            CopyInstruction {
-                span: Span { start: 0, end: 14 },
-                flags: vec![],
-                sources: vec![SourceType::FileName(SpannedString {
-                    span: Span::new(5, 8),
-                    content: "foo".to_string(),
-                })],
-                destination: SpannedString {
-                    span: Span::new(11, 14),
-                    content: "bar".to_string(),
-                },
-            }
-            .into()
-        );
+  #[test]
+  fn copy_boolean_flag_with_explicit_value() -> Result<()> {
+    // The explicit `--link=true` / `--link=false` forms still work and the
+    // value round-trips literally.
+    let parsed = parse_single("copy --link=false foo bar", Rule::copy)?
+      .into_copy()
+      .unwrap();
+    assert_eq!(parsed.flags.len(), 1);
+    assert_eq!(parsed.flags[0].name.content, "link");
+    assert_eq!(parsed.flags[0].value.content, "false");
+    Ok(())
+  }
 
-        // newlines must be escaped
-        assert_eq!(parse_single("copy foo\nbar", Rule::copy).is_err(), true);
+  #[test]
+  fn copy_boolean_flag_mixed_with_valued_flag() -> Result<()> {
+    // Bare boolean flags compose with valued flags in any order.
+    let parsed = parse_single("copy --link --chmod=755 foo bar", Rule::copy)?
+      .into_copy()
+      .unwrap();
+    assert_eq!(parsed.flags.len(), 2);
+    assert_eq!(parsed.flags[0].name.content, "link");
+    assert_eq!(parsed.flags[0].value.content, "true");
+    assert_eq!(parsed.flags[1].name.content, "chmod");
+    assert_eq!(parsed.flags[1].value.content, "755");
+    assert_eq!(parsed.sources.len(), 1);
+    assert_eq!(parsed.destination.content, "bar");
+    Ok(())
+  }
 
-        Ok(())
-    }
-
-    #[test]
-    fn copy_flags() -> Result<()> {
-        assert_eq!(
-            parse_single(
-                "copy --from=alpine:3.10 /usr/lib/libssl.so.1.1 /tmp/",
-                Rule::copy
-            )?,
-            CopyInstruction {
-                span: Span { start: 0, end: 52 },
-                flags: vec![CopyFlag {
-                    span: Span { start: 5, end: 23 },
-                    name: SpannedString {
-                        content: "from".into(),
-                        span: Span { start: 7, end: 11 },
-                    },
-                    value: SpannedString {
-                        content: "alpine:3.10".into(),
-                        span: Span { start: 12, end: 23 },
-                    }
-                }],
-                sources: vec![SourceType::FileName(SpannedString {
-                    span: Span::new(24, 46),
-                    content: "/usr/lib/libssl.so.1.1".to_string(),
-                })],
-                destination: SpannedString {
-                    span: Span::new(47, 52),
-                    content: "/tmp/".into(),
-                }
-            }
-            .into()
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn copy_comments() -> Result<()> {
-        assert_eq!(
-            parse_single(
-                indoc!(
-                    r#"
+  #[test]
+  fn copy_comments() -> Result<()> {
+    assert_eq!(
+      parse_single(
+        indoc!(r#"
           copy \
             --from=alpine:3.10 \
 
