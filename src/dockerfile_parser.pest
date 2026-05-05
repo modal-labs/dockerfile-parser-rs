@@ -186,7 +186,7 @@ copy = { ^"copy" ~ ( copy_heredoc |copy_standard) }
 env_name = ${ (ASCII_ALPHANUMERIC | "_")+ }
 env_pair_value = ${ any_whitespace }
 env_pair_quoted_value = ${ string }
-env_pair = @{ env_name ~ "=" ~ (env_pair_quoted_value | env_pair_value) }
+env_pair = @{ env_name ~ "=" ~ (env_pair_quoted_value | env_pair_value)? }
 env_pairs = { (arg_ws ~ env_pair?)+ }
 env_single_quoted_value = ${ string }
 env_single_value = @{ any_breakable }

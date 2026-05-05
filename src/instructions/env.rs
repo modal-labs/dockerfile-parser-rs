@@ -67,9 +67,10 @@ fn parse_env_pair(record: Pair) -> Result<EnvVar> {
     message: "env pair requires a key".into()
   })?;
 
-  let value = value.ok_or_else(|| Error::GenericParseError {
-    message: "env pair requires a value".into()
-  })?;
+  let value = value.unwrap_or_else(|| {
+    let empty_pos = key.span.end + 1;
+    BreakableString::new((empty_pos, empty_pos))
+  });
 
   Ok(EnvVar {
     span,
@@ -453,6 +454,46 @@ mod tests {
         )
       ]
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_env_empty_value() -> Result<()> {
+    let df = Dockerfile::parse("FROM ubuntu\nENV FOO=\nRUN echo done\n").unwrap();
+    let stages: Vec<_> = df.iter_stages().collect();
+    let ins = stages[0].instructions[1].as_env().unwrap();
+    assert_eq!(ins.vars.len(), 1);
+    assert_eq!(ins.vars[0].key.content, "FOO");
+    assert_eq!(ins.vars[0].value.to_string(), "");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_env_empty_value_with_other_pairs() -> Result<()> {
+    let df = Dockerfile::parse("FROM ubuntu\nENV FOO= BAR=baz\n").unwrap();
+    let stages: Vec<_> = df.iter_stages().collect();
+    let ins = stages[0].instructions[1].as_env().unwrap();
+    assert_eq!(ins.vars.len(), 2);
+    assert_eq!(ins.vars[0].key.content, "FOO");
+    assert_eq!(ins.vars[0].value.to_string(), "");
+    assert_eq!(ins.vars[1].key.content, "BAR");
+    assert_eq!(ins.vars[1].value.to_string(), "baz");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_env_multiple_empty_values() -> Result<()> {
+    let df = Dockerfile::parse("FROM ubuntu\nENV FOO= BAR=\n").unwrap();
+    let stages: Vec<_> = df.iter_stages().collect();
+    let ins = stages[0].instructions[1].as_env().unwrap();
+    assert_eq!(ins.vars.len(), 2);
+    assert_eq!(ins.vars[0].key.content, "FOO");
+    assert_eq!(ins.vars[0].value.to_string(), "");
+    assert_eq!(ins.vars[1].key.content, "BAR");
+    assert_eq!(ins.vars[1].value.to_string(), "");
 
     Ok(())
   }
