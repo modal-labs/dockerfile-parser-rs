@@ -21,28 +21,17 @@ pub struct CopyFlag {
 }
 
 impl CopyFlag {
-    fn from_record(record: Pair) -> Result<CopyFlag> {
-        let span = Span::from_pair(&record);
-        let mut name = None;
-        let mut value = None;
+  fn from_record(record: Pair) -> Result<CopyFlag> {
+    let span = Span::from_pair(&record);
+    let mut name = None;
+    let mut value = None;
 
-        for field in record.into_inner() {
-            match field.as_rule() {
-                Rule::copy_flag_name => name = Some(parse_string(&field)?),
-                Rule::copy_flag_value => value = Some(parse_string(&field)?),
-                _ => return Err(unexpected_token(field)),
-            }
-        }
-
-        let name = name.ok_or_else(|| Error::GenericParseError {
-            message: "copy flags require a key".into(),
-        })?;
-
-        let value = value.ok_or_else(|| Error::GenericParseError {
-            message: "copy flags require a value".into(),
-        })?;
-
-        Ok(CopyFlag { span, name, value })
+    for field in record.into_inner() {
+      match field.as_rule() {
+        Rule::copy_flag_name => name = Some(parse_string(&field)?),
+        Rule::copy_flag_value => value = Some(parse_string(&field)?),
+        _ => return Err(unexpected_token(field)),
+      }
     }
 
     let name = name.ok_or_else(|| Error::GenericParseError {
