@@ -6,49 +6,9 @@ use snafu::ensure;
 
 use crate::dockerfile_parser::Instruction;
 use crate::parser::{Pair, Rule};
-use crate::SpannedString;
 use crate::{error::*, SourceType};
 use crate::{parse_string, Span};
-
-/// A key/value pair passed to a `ADD` instruction as a flag.
-///
-/// Examples include: `ADD --checksum=sha256:... /to /from`
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct AddFlag {
-    pub span: Span,
-    pub name: SpannedString,
-    pub value: SpannedString,
-}
-
-impl AddFlag {
-    fn from_record(record: Pair) -> Result<AddFlag> {
-        let span = Span::from_pair(&record);
-        let mut name = None;
-        let mut value = None;
-
-        for field in record.into_inner() {
-            match field.as_rule() {
-                Rule::copy_flag_name => name = Some(parse_string(&field)?),
-                Rule::copy_flag_value => value = Some(parse_string(&field)?),
-                _ => return Err(unexpected_token(field)),
-            }
-        }
-
-        let name = name.ok_or_else(|| Error::GenericParseError {
-            message: "add flags require a key".into(),
-        })?;
-
-        // Boolean flags like `--extract` parse without a `=value`. BuildKit treats
-        // bare `--extract` as equivalent to `--extract=true`, so we synthesize that here
-        // rather than push the Optional all the way through the public AddFlag API.
-        let value = value.unwrap_or_else(|| SpannedString {
-            span,
-            content: "true".to_string(),
-        });
-
-        Ok(AddFlag { span, name, value })
-    }
-}
+use crate::{CopyFlag, SpannedString};
 
 /// A Dockerfile [`COPY` instruction][copy].
 ///
@@ -56,7 +16,7 @@ impl AddFlag {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AddInstruction {
     pub span: Span,
-    pub flags: Vec<AddFlag>,
+    pub flags: Vec<CopyFlag>,
     pub sources: Vec<SourceType>,
     pub destination: SpannedString,
 }
@@ -80,7 +40,7 @@ impl AddInstruction {
                 let mut paths = Vec::new();
                 for inner in field.into_inner() {
                     match inner.as_rule() {
-                        Rule::copy_flag => flags.push(AddFlag::from_record(inner)?),
+                        Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
                         Rule::copy_pathspec => paths.push(parse_string(&inner)?),
                         Rule::comment => continue,
                         _ => return Err(unexpected_token(inner)),
@@ -104,7 +64,7 @@ impl AddInstruction {
                 let mut sources = Vec::new();
                 for inner in field.into_inner() {
                     match inner.as_rule() {
-                        Rule::copy_flag => flags.push(AddFlag::from_record(inner)?),
+                        Rule::copy_flag => flags.push(CopyFlag::from_record(inner)?),
                         Rule::copy_pathspec => destination = parse_string(&inner)?,
                         Rule::heredoc_body => sources.push(parse_string(&inner)?),
                         _ => return Err(unexpected_token(inner)),
@@ -240,7 +200,7 @@ mod tests {
             )?,
             AddInstruction {
                 span: Span { start: 0, end: 52 },
-                flags: vec![AddFlag {
+                flags: vec![CopyFlag {
                     span: Span { start: 5, end: 23 },
                     name: SpannedString {
                         content: "from".into(),
@@ -336,7 +296,7 @@ mod tests {
             .unwrap(),
             AddInstruction {
                 span: Span { start: 0, end: 86 },
-                flags: vec![AddFlag {
+                flags: vec![CopyFlag {
                     span: Span { start: 9, end: 27 },
                     name: SpannedString {
                         span: Span { start: 11, end: 15 },
@@ -573,7 +533,7 @@ mod tests {
             .unwrap(),
             AddInstruction {
                 span: Span { start: 0, end: 92 },
-                flags: vec![AddFlag {
+                flags: vec![CopyFlag {
                     span: Span { start: 5, end: 19 },
                     name: SpannedString {
                         span: Span { start: 7, end: 11 },
