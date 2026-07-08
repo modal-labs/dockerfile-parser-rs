@@ -10,9 +10,10 @@ use crate::{error::*, SourceType};
 use crate::{parse_string, Span};
 use crate::{CopyFlag, SpannedString};
 
-/// A Dockerfile [`COPY` instruction][copy].
+/// A Dockerfile [`ADD` instruction][add].
 ///
-/// [copy]: https://docs.docker.com/engine/reference/builder/#copy
+/// [add]: https://docs.docker.com/engine/reference/builder/#add
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AddInstruction {
     pub span: Span,
