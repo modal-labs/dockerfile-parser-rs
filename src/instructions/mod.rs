@@ -27,3 +27,5 @@ pub use cmd::*;
 mod misc;
 pub use misc::*;
 
+mod add;
+pub use add::*;

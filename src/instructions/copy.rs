@@ -21,7 +21,7 @@ pub struct CopyFlag {
 }
 
 impl CopyFlag {
-  fn from_record(record: Pair) -> Result<CopyFlag> {
+  pub(crate) fn from_record(record: Pair) -> Result<CopyFlag> {
     let span = Span::from_pair(&record);
     let mut name = None;
     let mut value = None;

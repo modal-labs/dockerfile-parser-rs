@@ -15,9 +15,10 @@ step = _{
     entrypoint |
     cmd |
     env |
+    add |
 
     // todos:
-    // add | workdir | user
+    // workdir | user
 
     // things that we probably won't bother supporting
     // expose | volume | onbuild | stopsignal | healthcheck | shell
@@ -199,6 +200,10 @@ env_single_quoted_value = ${ string }
 env_single_value = @{ any_breakable }
 env_single = {  arg_ws ~ env_name ~ arg_ws ~ (env_single_quoted_value | env_single_value) }
 env = { ^"env" ~ (env_single | env_pairs) }
+
+// Note: The grammar for these add and copy are identical
+// The differences are handled later
+add = { ^"add" ~ ( copy_heredoc | copy_standard) }
 
 misc_instruction = @{ ASCII_ALPHA+ }
 misc_arguments = @{ any_breakable }
