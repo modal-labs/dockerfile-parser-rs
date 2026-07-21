@@ -129,6 +129,33 @@ mod tests {
       }.into()
     );
 
+    assert_eq!(
+      parse_single("arg foo=", Rule::arg)?,
+      ArgInstruction {
+        span: Span::new(0, 8),
+        name: SpannedString {
+          span: Span::new(4, 7),
+          content: "foo".into(),
+        },
+        value: Some(SpannedString {
+          span: Span::new(8, 8),
+          content: "".into(),
+        }),
+      }.into()
+    );
+
+    assert_eq!(
+      parse_single("arg foo", Rule::arg)?,
+      ArgInstruction {
+        span: Span::new(0, 7),
+        name: SpannedString {
+          span: Span::new(4, 7),
+          content: "foo".into(),
+        },
+        value: None,
+      }.into()
+    );
+
     assert!(Dockerfile::parse(r#"arg foo="bar"bar"#).is_err());
     assert!(Dockerfile::parse(r#"arg foo='bar'bar"#).is_err());
 
