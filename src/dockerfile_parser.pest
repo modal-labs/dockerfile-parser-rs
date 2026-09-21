@@ -162,7 +162,10 @@ run_option_name = @{ ASCII_ALPHA+ }
 run_option_value = @{ any_whitespace }
 run_option = { "--" ~ run_option_name ~ "=" ~ run_option_value }
 
-run = { ^"run" ~ (arg_ws ~ run_option)* ~ ( (arg_ws ~ run_exec) | (ws+ ~ run_shell) ) }
+// The command is optional so that a RUN consisting only of options (or of
+// nothing at all) is still classified as a RUN rather than falling through to
+// `misc`; consumers observe an empty shell expression in that case.
+run = { ^"run" ~ (arg_ws ~ run_option)* ~ ( (arg_ws ~ run_exec) | (ws+ ~ run_shell) )? }
 
 entrypoint_shell = @{ any_breakable }
 entrypoint_exec = { string_array }

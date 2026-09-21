@@ -84,9 +84,15 @@ impl RunInstruction {
       }
     }
 
-    let field = expr_pair.ok_or_else(|| Error::GenericParseError {
-      message: "missing run expression".into()
-    })?;
+    // A RUN with no command (e.g. only `--mount=...` options) is represented as
+    // an empty shell expression so callers can report it themselves.
+    let Some(field) = expr_pair else {
+      return Ok(RunInstruction {
+        span,
+        options,
+        expr: ShellOrExecExpr::Shell(BreakableString::new((span.end, span.end))),
+      });
+    };
 
     match field.as_rule() {
       Rule::run_exec => Ok(RunInstruction {
@@ -761,6 +767,23 @@ mod tests {
       heredoc.content,
       "<< 'EOF'\nserver {\n    listen 80;\n}\nEOF"
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn run_options_without_command_is_empty_shell() -> Result<()> {
+    let ins = parse_single(r#"run --mount=type=cache,target=/root/.cache"#, Rule::run)?
+      .into_run().unwrap();
+    assert_eq!(ins.options.len(), 1);
+    assert_eq!(ins.options[0].to_string(), "--mount=type=cache,target=/root/.cache");
+    let shell = ins.as_shell().unwrap();
+    assert_eq!(shell.iter_components().count(), 0);
+    assert_eq!(shell.to_string(), "");
+
+    let ins = parse_single("run", Rule::run)?.into_run().unwrap();
+    assert!(ins.options.is_empty());
+    assert_eq!(ins.as_shell().unwrap().to_string(), "");
 
     Ok(())
   }
